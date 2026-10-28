@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Кружок · crimson</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    background: radial-gradient(circle at 50% 42%, #ff4d6d 0%, #dc143c 52%, #8b0e26 100%);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 22px 20px max(90px, calc(env(safe-area-inset-bottom) + 70px));
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #stage {
+    position: relative;
+    width: min(74vmin, 440px, calc(100vh - 130px));
+    aspect-ratio: 1;
+    display: grid; place-items: center;
+    touch-action: none;
+  }
+  .circle { position: relative; width: 82%; aspect-ratio: 1; border-radius: 50%; }
+
+  .video-mask {
+    position: absolute; inset: 0;
+    border-radius: 50%; overflow: hidden; background: #000;
+    cursor: pointer;
+    box-shadow: 0 18px 50px rgba(0,0,0,.38), 0 0 0 1px rgba(255,255,255,.14) inset;
+  }
+  .video-mask video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .pause-overlay {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    background: rgba(0,0,0,.28);
+    opacity: 0; transition: opacity .18s; pointer-events: none;
+  }
+  .pause-overlay svg { width: 22%; height: auto; max-width: 58px; filter: drop-shadow(0 2px 10px rgba(0,0,0,.45)); }
+  .video-mask.paused .pause-overlay { opacity: 1; }
+
+  .upload {
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    border: 2px dashed rgba(255,255,255,.6);
+    background: rgba(0,0,0,.12);
+    display: grid; place-content: center; justify-items: center;
+    gap: 10px; padding: 12%; text-align: center;
+    cursor: pointer;
+    transition: background .2s, border-color .2s;
+  }
+  .upload:hover { background: rgba(0,0,0,.24); border-color: #fff; }
+  .upload svg { width: 34%; max-width: 62px; height: auto; opacity: .95; }
+  .upload b { font-size: clamp(13px, 3.4vmin, 17px); font-weight: 600; }
+  .upload span { font-size: clamp(11px, 2.8vmin, 14px); opacity: .75; line-height: 1.35; }
+
+  .ring {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none; opacity: 0; transition: opacity .3s;
+  }
+  #stage.loaded .ring { opacity: 1; }
+  .ring .track { fill: none; stroke: rgba(0,0,0,.22); stroke-width: 9; }
+  .ring .prog { fill: none; stroke: #fff; stroke-width: 9; stroke-linecap: round; }
+  .ring .thumb { filter: drop-shadow(0 1px 4px rgba(0,0,0,.4)); }
+
+  .bar {
+    position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  .bar.show { opacity: 1; pointer-events: auto; }
+  .bar button {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 9px 16px; border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.35);
+    background: rgba(0,0,0,.22);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    color: #fff; font: inherit; font-size: 13px; cursor: pointer;
+    transition: background .2s, border-color .2s;
+  }
+  .bar button:hover:not(:disabled) { background: rgba(0,0,0,.4); border-color: rgba(255,255,255,.65); }
+  .bar button:disabled { opacity: .55; cursor: default; }
+  #shareBtn { background: rgba(255,255,255,.16); border-color: rgba(255,255,255,.5); }
+  #shareBtn:hover:not(:disabled) { background: rgba(255,255,255,.26); }
+  .bar button svg, .modal-actions button svg { width: 15px; height: 15px; flex-shrink: 0; display: block; }
+
+  body.dragover .upload { background: rgba(0,0,0,.3); border-color: #fff; }
+
+  .modal {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    display: grid; place-items: center;
+    z-index: 150; padding: 20px;
+  }
+  .modal-card {
+    width: min(440px, 100%);
+    background: #1c1c1e;
+    border-radius: 22px; padding: 22px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.55);
+    border: 1px solid rgba(255,255,255,.08);
+    color: #fff; max-height: 90vh; overflow-y: auto;
+  }
+  .modal-card h2 { margin: 0 0 4px; font-size: 19px; font-weight: 700; }
+  .modal-sub { margin: 0 0 16px; font-size: 13px; opacity: .6; }
+
+  .ratios { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 18px; }
+  .ratio-btn {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    padding: 12px 14px; border-radius: 14px;
+    border: 2px solid rgba(255,255,255,.12);
+    background: rgba(255,255,255,.04);
+    color: #fff; font: inherit; cursor: pointer; text-align: left;
+    transition: border-color .15s, background .15s, transform .1s;
+  }
+  .ratio-btn:active { transform: scale(.98); }
+  .ratio-btn.active { border-color: #dc143c; background: rgba(220,20,60,.14); }
+  .ratio-btn b { font-size: 15px; font-weight: 700; }
+  .ratio-btn small { font-size: 11px; opacity: .6; }
+  .ratio-preview {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: 8px; background: rgba(255,255,255,.06); margin-bottom: 8px;
+  }
+  .ratio-shape { background: #fff; border-radius: 3px; opacity: .85; display: block; }
+  .ratio-btn.active .ratio-shape { background: #e84d6b; opacity: 1; }
+
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  .modal-actions button {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 11px 16px; border-radius: 12px; border: none;
+    font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    transition: opacity .15s, background .15s;
+  }
+  .modal-actions .ghost { background: transparent; color: rgba(255,255,255,.65); }
+  .modal-actions .ghost:hover { color: #fff; }
+  .modal-actions .secondary { background: rgba(255,255,255,.12); color: #fff; }
+  .modal-actions .secondary:hover { background: rgba(255,255,255,.2); }
+  .modal-actions .primary { background: #dc143c; color: #fff; }
+  .modal-actions .primary:hover { background: #e63f5f; }
+
+  .ready-preview {
+    width: 100%; max-height: 42vh; border-radius: 12px;
+    background: #000; margin-bottom: 16px; display: block; object-fit: contain;
+  }
+
+  .rec-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.72);
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    display: grid; place-items: center; z-index: 200;
+  }
+  .rec-box { display: flex; flex-direction: column; align-items: center; gap: 12px; color: #fff; text-align: center; padding: 20px; }
+  .rec-box b { font-size: 16px; }
+  .rec-box span { font-size: 12px; opacity: .6; }
+  .spinner {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,.2);
+    border-top-color: #fff;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .rec-bar { width: 220px; height: 4px; background: rgba(255,255,255,.15); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  .rec-bar-fill { height: 100%; background: #dc143c; width: 0%; transition: width .12s linear; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 96px;
+    transform: translateX(-50%) translateY(10px);
+    background: rgba(0,0,0,.88); color: #fff;
+    padding: 11px 18px; border-radius: 999px; font-size: 13px;
+    opacity: 0; transition: opacity .25s, transform .25s;
+    pointer-events: none; z-index: 250;
+    max-width: calc(100vw - 40px); text-align: center;
+    border: 1px solid rgba(255,255,255,.12);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div class="circle" id="circle">
+
+    <div class="video-mask paused" id="videoMask" hidden>
+      <video id="video" playsinline loop muted preload="metadata"></video>
+      <div class="pause-overlay">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M8 5.5v13a1 1 0 0 0 1.54.84l10-6.5a1 1 0 0 0 0-1.68l-10-6.5A1 1 0 0 0 8 5.5z"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="upload" id="upload">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/>
+        <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
+      </svg>
+      <b>Перетащи кружок сюда</b>
+      <span>или нажми, чтобы выбрать видео</span>
+    </div>
+
+  </div>
+
+  <svg class="ring" viewBox="0 0 260 260" aria-hidden="true">
+    <circle class="track" cx="130" cy="130" r="118"/>
+    <circle class="prog" id="progress" cx="130" cy="130" r="118" transform="rotate(-90 130 130)"/>
+    <image class="thumb" id="thumb"
+           href="https://res.cloudinary.com/dplmdnxvk/image/upload/v1793178396/onen8xbnc8j72jlnlrn3.png"
+           x="119" y="1" width="22" height="22"
+           preserveAspectRatio="xMidYMid meet"/>
+  </svg>
+</div>
+
+<div class="bar" id="controls">
+  <button id="soundBtn" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+      <line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/>
+    </svg>
+    <span>Звук</span>
+  </button>
+
+  <button id="changeBtn" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+      <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+    </svg>
+    <span>Другое видео</span>
+  </button>
+
+  <button id="shareBtn" type="button">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+    </svg>
+    <span>Поделиться</span>
+  </button>
+</div>
+
+<input type="file" id="file" accept="video/*" hidden>
+
+<div class="modal" id="shareModal" hidden role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+  <div class="modal-card">
+    <h2 id="shareTitle">Формат видео</h2>
+    <p class="modal-sub">Влияет только на итоговый файл</p>
+
+    <div class="ratios" id="ratioList">
+      <button type="button" class="ratio-btn active" data-ratio="1:1">
+        <span class="ratio-preview"><span class="ratio-shape" style="aspect-ratio:1;height:26px"></span></span>
+        <b>1:1</b><small>Квадрат · 1080×1080</small>
+      </button>
+      <button type="button" class="ratio-btn" data-ratio="9:16">
+        <span class="ratio-preview"><span class="ratio-shape" style="aspect-ratio:9/16;height:26px"></span></span>
+        <b>9:16</b><small>Сторис · 1080×1920</small>
+      </button>
+      <button type="button" class="ratio-btn" data-ratio="16:9">
+        <span class="ratio-preview"><span class="ratio-shape" style="aspect-ratio:16/9;width:26px"></span></span>
+        <b>16:9</b><small>YouTube · 1920×1080</small>
+      </button>
+      <button type="button" class="ratio-btn" data-ratio="4:5">
+        <span class="ratio-preview"><span class="ratio-shape" style="aspect-ratio:4/5;height:26px"></span></span>
+        <b>4:5</b><small>Instagram · 1080×1350</small>
+      </button>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="ghost" id="modalCancel">Отмена</button>
+      <button type="button" class="primary" id="modalGo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+        <span>Поделиться</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="readyModal" hidden role="dialog" aria-modal="true" aria-labelledby="readyTitle">
+  <div class="modal-card">
+    <h2 id="readyTitle">Видео готово</h2>
+    <p class="modal-sub" id="readyInfo"></p>
+    <video id="readyVideo" class="ready-preview" controls playsinline muted></video>
+    <div class="modal-actions">
+      <button type="button" class="ghost" id="readyClose">Закрыть</button>
+      <button type="button" class="secondary" id="readyDownload">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        <span>Скачать</span>
+      </button>
+      <button type="button" class="primary" id="readyShareBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+        </svg>
+        <span>Поделиться</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="rec-overlay" id="recOverlay" hidden>
+  <div class="rec-box">
+    <div class="spinner"></div>
+    <b>Запись видео…</b>
+    <span>Не переключайте вкладку</span>
+    <div class="rec-bar"><div class="rec-bar-fill" id="recProgress"></div></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), circle = $('circle'), videoMask = $('videoMask'),
+        video = $('video'), upload = $('upload'), fileInput = $('file'),
+        controls = $('controls'), soundBtn = $('soundBtn'), changeBtn = $('changeBtn'),
+        shareBtn = $('shareBtn'), prog = $('progress'), thumb = $('thumb'),
+        shareModal = $('shareModal'), ratioList = $('ratioList'),
+        modalCancel = $('modalCancel'), modalGo = $('modalGo'),
+        readyModal = $('readyModal'), readyInfo = $('readyInfo'),
+        readyVideo = $('readyVideo'), readyClose = $('readyClose'),
+        readyDownload = $('readyDownload'), readyShareBtn = $('readyShareBtn'),
+        recOverlay = $('recOverlay'), recProgress = $('recProgress');
+
+  const LOGO_URL = 'https://res.cloudinary.com/dplmdnxvk/image/upload/v1793178396/onen8xbnc8j72jlnlrn3.png';
+  const THUMB_SIZE = 22;
+
+  const ICON_VOLUME_OFF =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>' +
+    '<line x1="22" y1="9" x2="16" y2="15"/><line x1="16" y1="9" x2="22" y2="15"/></svg>';
+
+  const ICON_VOLUME_ON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>' +
+    '<path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
+
+  const R = 118, CX = 130, CY = 130, CIRC = 2 * Math.PI * R;
+  prog.style.strokeDasharray = CIRC;
+  prog.style.strokeDashoffset = CIRC;
+
+  const logoImg = new Image();
+  logoImg.crossOrigin = 'anonymous';
+  logoImg.src = LOGO_URL;
+
+  const logoReady = new Promise(resolve => {
+    const done = () => resolve(logoImg.complete && logoImg.naturalWidth > 0);
+    if (logoImg.complete) return done();
+    logoImg.onload = done;
+    logoImg.onerror = () => resolve(false);
+    setTimeout(done, 3000);
+  });
+
+  const RATIOS = {
+    '1:1':  { w: 1080, h: 1080 },
+    '9:16': { w: 1080, h: 1920 },
+    '16:9': { w: 1920, h: 1080 },
+    '4:5':  { w: 1080, h: 1350 },
+  };
+  let selectedRatio = '1:1';
+
+  let objectUrl = null, muted = true, seeking = false, justSeeked = false,
+      exporting = false, currentFileName = 'circle';
+  let readyBlob = null, readyName = '', readyUrl = '';
+
+  let audioCtx = null, mediaSource = null, speakerGain = null, recorderDest = null;
+
+  function applyMute() {
+    if (speakerGain) speakerGain.gain.value = muted ? 0 : 1;
+    else video.muted = muted;
+    soundBtn.innerHTML = (muted ? ICON_VOLUME_OFF : ICON_VOLUME_ON) + '<span>Звук</span>';
+  }
+
+  function ensureAudioGraph() {
+    if (recorderDest) return recorderDest.stream;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try {
+      audioCtx = new AC();
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+      mediaSource = audioCtx.createMediaElementSource(video);
+      speakerGain = audioCtx.createGain();
+      recorderDest = audioCtx.createMediaStreamDestination();
+      mediaSource.connect(speakerGain);
+      speakerGain.connect(audioCtx.destination);
+      mediaSource.connect(recorderDest);
+      video.muted = false;
+      video.volume = 1;
+      applyMute();
+      return recorderDest.stream;
+    } catch (e) {
+      console.warn('Audio graph failed:', e);
+      audioCtx = mediaSource = speakerGain = recorderDest = null;
+      return null;
+    }
+  }
+
+  function setProgress(p) {
+    p = Math.min(1, Math.max(0, p || 0));
+    prog.style.strokeDashoffset = CIRC * (1 - p);
+    prog.style.opacity = p > 0.0005 ? 1 : 0;
+
+    const a = p * Math.PI * 2 - Math.PI / 2;
+    const s = THUMB_SIZE;
+    thumb.setAttribute('x', (CX + R * Math.cos(a) - s / 2).toFixed(2));
+    thumb.setAttribute('y', (CY + R * Math.sin(a) - s / 2).toFixed(2));
+  }
+
+  (function frame() {
+    if (!seeking && video.duration && isFinite(video.duration)) {
+      setProgress(video.currentTime / video.duration);
+    }
+    requestAnimationFrame(frame);
+  })();
+
+  function seekTo(x, y) {
+    if (!video.duration || !isFinite(video.duration)) return;
+    const r = stage.getBoundingClientRect();
+    let deg = Math.atan2(y - (r.top + r.height / 2), x - (r.left + r.width / 2)) * 180 / Math.PI + 90;
+    deg = ((deg % 360) + 360) % 360;
+    const p = deg / 360;
+    video.currentTime = p * video.duration;
+    setProgress(p);
+  }
+
+  stage.addEventListener('pointerdown', (e) => {
+    if (!video.src || exporting) return;
+    const r = stage.getBoundingClientRect();
+    const dist = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+    const videoR = circle.getBoundingClientRect().width / 2;
+    if (dist >= videoR * 0.97) {
+      seeking = true;
+      justSeeked = true;
+      try { stage.setPointerCapture(e.pointerId); } catch (_) {}
+      seekTo(e.clientX, e.clientY);
+      e.preventDefault();
+    } else {
+      justSeeked = false;
+    }
+  });
+  stage.addEventListener('pointermove', (e) => { if (seeking) seekTo(e.clientX, e.clientY); });
+
+  function endSeek(e) {
+    if (!seeking) return;
+    seeking = false;
+    try { if (stage.hasPointerCapture(e.pointerId)) stage.releasePointerCapture(e.pointerId); } catch (_) {}
+  }
+  stage.addEventListener('pointerup', endSeek);
+  stage.addEventListener('pointercancel', endSeek);
+
+  function togglePlay() {
+    if (!video.src || exporting) return;
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+  }
+
+  videoMask.addEventListener('click', () => {
+    if (justSeeked || exporting) return;
+    togglePlay();
+  });
+  video.addEventListener('play', () => videoMask.classList.remove('paused'));
+  video.addEventListener('pause', () => videoMask.classList.add('paused'));
+
+  function loadFile(file) {
+    if (!file) return;
+    if (exporting) { toast('Подождите, идёт запись'); return; }
+    const okType = file.type.startsWith('video/') || /\.(mp4|mov|webm|mkv|m4v|avi)$/i.test(file.name);
+    if (!okType) { alert('Нужен видеофайл'); return; }
+
+    currentFileName = (file.name || 'circle').replace(/\.[^.]+$/, '');
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(file);
+
+    video.src = objectUrl;
+    video.muted = muted;
+    videoMask.hidden = false;
+    upload.hidden = true;
+    controls.classList.add('show');
+    stage.classList.add('loaded');
+    setProgress(0);
+    video.play().catch(() => {});
+  }
+
+  upload.addEventListener('click', () => fileInput.click());
+  changeBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => { loadFile(fileInput.files[0]); fileInput.value = ''; });
+
+  ['dragenter', 'dragover'].forEach(ev =>
+    document.addEventListener(ev, e => { e.preventDefault(); document.body.classList.add('dragover'); })
+  );
+  ['dragleave', 'drop'].forEach(ev =>
+    document.addEventListener(ev, e => {
+      e.preventDefault();
+      if (ev === 'drop' || e.target === document.documentElement) document.body.classList.remove('dragover');
+    })
+  );
+  document.addEventListener('drop', e => {
+    const f = e.dataTransfer && e.dataTransfer.files[0];
+    if (f) loadFile(f);
+  });
+
+  soundBtn.addEventListener('click', () => { muted = !muted; applyMute(); });
+
+  function toast(msg) {
+    const el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 2800);
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' Б';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' КБ';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' МБ';
+  }
+
+  const bgCache = {};
+  function buildBackground(W, H) {
+    const key = W + 'x' + H;
+    if (bgCache[key]) return bgCache[key];
+
+    const bg = document.createElement('canvas');
+    bg.width = W; bg.height = H;
+    const bctx = bg.getContext('2d', { willReadFrequently: true });
+
+    const gx = W * 0.5, gy = H * 0.42;
+    let gr = 0;
+    for (const [x, y] of [[0, 0], [W, 0], [0, H], [W, H]]) {
+      gr = Math.max(gr, Math.hypot(x - gx, y - gy));
+    }
+
+    const grad = bctx.createRadialGradient(gx, gy, 0, gx, gy, gr);
+    grad.addColorStop(0, '#ff4d6d');
+    grad.addColorStop(0.52, '#dc143c');
+    grad.addColorStop(1, '#8b0e26');
+    bctx.fillStyle = grad;
+    bctx.fillRect(0, 0, W, H);
+
+    try {
+      const img = bctx.getImageData(0, 0, W, H);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const n1 = (Math.random() * 3) | 0;
+        const n2 = (Math.random() * 3) | 0;
+        d[i] = Math.min(255, d[i] + n1);
+        d[i + 1] = Math.min(255, d[i + 1] + n2);
+        d[i + 2] = Math.min(255, d[i + 2] + ((n1 + n2) >> 1));
+      }
+      bctx.putImageData(img, 0, 0);
+    } catch (_) {}
+
+    bgCache[key] = bg;
+    return bg;
+  }
+
+  function drawFrame(ctx, W, H, v, p) {
+    p = Math.min(1, Math.max(0, p || 0));
+    ctx.drawImage(buildBackground(W, H), 0, 0);
+
+    const cx = W / 2, cy = H / 2, base = Math.min(W, H);
+    const videoR = 0.41 * base;
+    const ringR = (118 / 260) * base;
+    const ringW = (9 / 260) * base;
+    const thumbSize = (THUMB_SIZE / 260) * base;
+
+    if (v.readyState >= 2 && v.videoWidth) {
+      const d = videoR * 2;
+      const scale = Math.max(d / v.videoWidth, d / v.videoHeight);
+      const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, videoR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(v, cx - dw / 2, cy - dh / 2, dw, dh);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = ringW;
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    if (p > 0.0005) {
+      const start = -Math.PI / 2;
+      const end = start + p * Math.PI * 2;
+      ctx.save();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = ringW;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR, start, end);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const a = p * Math.PI * 2 - Math.PI / 2;
+    const tx = cx + ringR * Math.cos(a);
+    const ty = cy + ringR * Math.sin(a);
+
+    if (logoImg.complete && logoImg.naturalWidth > 0) {
+      const iw = logoImg.naturalWidth, ih = logoImg.naturalHeight;
+      const sc = Math.min(thumbSize / iw, thumbSize / ih);
+      const dw = iw * sc, dh = ih * sc;
+      ctx.save();
+      ctx.shadowColor = 'rgba(0,0,0,0.4)';
+      ctx.shadowBlur = (4 / 260) * base;
+      ctx.shadowOffsetY = (1 / 260) * base;
+      ctx.drawImage(logoImg, tx - dw / 2, ty - dh / 2, dw, dh);
+      ctx.restore();
+    }
+  }
+
+  function pickMime() {
+    const list = [
+      'video/mp4;codecs=avc1.640028,mp4a.40.2',
+      'video/mp4;codecs=avc1.4d002a,mp4a.40.2',
+      'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+      'video/mp4',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+      'video/webm'
+    ];
+    for (const c of list) if (MediaRecorder.isTypeSupported(c)) return c;
+    return '';
+  }
+
+  const bitrateFor = (W, H) => Math.min(45_000_000, Math.round(W * H * 20));
+
+  async function exportVideo(W, H, onProgress) {
+    if (!video.src) throw new Error('Нет видео');
+    if (!video.duration || !isFinite(video.duration)) throw new Error('Видео ещё не готово');
+    if (!window.MediaRecorder) throw new Error('Нет MediaRecorder');
+    if (typeof HTMLCanvasElement.prototype.captureStream !== 'function') throw new Error('Нет captureStream');
+
+    await logoReady;
+
+    buildBackground(W, H);
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d', { alpha: false });
+
+    let audioStream = null;
+    try { audioStream = ensureAudioGraph(); } catch (_) {}
+    const prevGain = speakerGain ? speakerGain.gain.value : null;
+    if (speakerGain) speakerGain.gain.value = 0;
+
+    const stream = canvas.captureStream(30);
+    if (audioStream) audioStream.getAudioTracks().forEach(t => stream.addTrack(t));
+
+    const mimeType = pickMime();
+    const options = { videoBitsPerSecond: bitrateFor(W, H) };
+    if (mimeType) options.mimeType = mimeType;
+
+    const recorder = new MediaRecorder(stream, options);
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise(resolve => {
+      recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }));
+    });
+
+    const prevLoop = video.loop;
+    video.loop = false;
+    video.pause();
+
+    await new Promise(res => {
+      if (Math.abs(video.currentTime) < 0.01) return res();
+      const on = () => { video.removeEventListener('seeked', on); res(); };
+      video.addEventListener('seeked', on);
+      video.currentTime = 0;
+      setTimeout(() => { video.removeEventListener('seeked', on); res(); }, 1500);
+    });
+
+    let rafId = 0;
+    const draw = () => {
+      const p = video.duration ? video.currentTime / video.duration : 0;
+      drawFrame(ctx, W, H, video, p);
+      if (onProgress && video.duration) onProgress(Math.min(1, p));
+      rafId = requestAnimationFrame(draw);
+    };
+    draw();
+
+    recorder.start(250);
+    try { await video.play(); } catch (_) {}
+
+    await new Promise(resolve => {
+      const onEnded = () => { video.removeEventListener('ended', onEnded); resolve(); };
+      video.addEventListener('ended', onEnded);
+      setTimeout(resolve, (video.duration + 3) * 1000);
+    });
+
+    cancelAnimationFrame(rafId);
+    try {
+      if (video.currentTime < video.duration - 0.0005) {
+        video.currentTime = Math.max(0, video.duration - 0.0005);
+      }
+    } catch (_) {}
+
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    drawFrame(ctx, W, H, video, 1);
+    if (onProgress) onProgress(1);
+    await new Promise(r => setTimeout(r, 300));
+
+    if (recorder.state !== 'inactive') recorder.stop();
+    const blob = await stopped;
+
+    video.pause();
+    video.loop = prevLoop;
+    if (speakerGain) speakerGain.gain.value = prevGain !== null ? prevGain : (muted ? 0 : 1);
+    video.currentTime = 0;
+    setProgress(0);
+    if (onProgress) onProgress(0);
+
+    if (!blob.size) throw new Error('Пустая запись');
+    return blob;
+  }
+
+  function downloadBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }
+
+  function canShareFiles(blob, name) {
+    try {
+      if (!navigator.share || !navigator.canShare || !window.isSecureContext) return false;
+      return navigator.canShare({ files: [new File([blob], name, { type: blob.type || 'video/mp4' })] });
+    } catch (_) { return false; }
+  }
+
+  function showReady(blob, name, ratio, w, h) {
+    readyBlob = blob; readyName = name;
+    if (readyUrl) URL.revokeObjectURL(readyUrl);
+    readyUrl = URL.createObjectURL(blob);
+    readyVideo.src = readyUrl;
+    readyVideo.style.aspectRatio = `${w} / ${h}`;
+    readyVideo.muted = true;
+    readyInfo.textContent = `${ratio} · ${w}×${h} · ${formatSize(blob.size)}`;
+    readyShareBtn.style.display = canShareFiles(blob, name) ? '' : 'none';
+    readyModal.hidden = false;
+  }
+
+  function closeReady() {
+    readyModal.hidden = true;
+    try { readyVideo.pause(); } catch (_) {}
+    if (readyUrl) { URL.revokeObjectURL(readyUrl); readyUrl = ''; readyVideo.removeAttribute('src'); }
+    readyBlob = null; readyName = '';
+  }
+
+  readyClose.addEventListener('click', closeReady);
+  readyModal.addEventListener('click', e => { if (e.target === readyModal) closeReady(); });
+
+  readyDownload.addEventListener('click', () => {
+    if (!readyBlob) return;
+    downloadBlob(readyBlob, readyName);
+    toast('Файл скачан');
+  });
+
+  readyShareBtn.addEventListener('click', async () => {
+    if (!readyBlob) return;
+    const file = new File([readyBlob], readyName, { type: readyBlob.type || 'video/mp4' });
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Кружок' });
+        closeReady();
+      } catch (e) {
+        if (!e || e.name !== 'AbortError') {
+          console.warn('Share failed:', e);
+          toast('Не удалось поделиться. Попробуйте «Скачать»');
+        }
+      }
+    } else {
+      toast('Поделиться недоступно');
+    }
+  });
+
+  function openModal() { shareModal.hidden = false; }
+  function closeModal() { shareModal.hidden = true; }
+
+  shareBtn.addEventListener('click', () => {
+    if (!video.src) return fileInput.click();
+    openModal();
+  });
+
+  ratioList.addEventListener('click', e => {
+    const btn = e.target.closest('.ratio-btn');
+    if (!btn) return;
+    selectedRatio = btn.dataset.ratio;
+    ratioList.querySelectorAll('.ratio-btn').forEach(b => b.classList.toggle('active', b === btn));
+  });
+
+  modalCancel.addEventListener('click', closeModal);
+  shareModal.addEventListener('click', e => { if (e.target === shareModal) closeModal(); });
+
+  modalGo.addEventListener('click', async () => {
+    if (exporting) return;
+    const cfg = RATIOS[selectedRatio];
+    if (!cfg) return;
+
+    closeModal();
+    exporting = true;
+    recOverlay.hidden = false;
+    recProgress.style.width = '0%';
+    shareBtn.disabled = true;
+
+    try {
+      const blob = await exportVideo(cfg.w, cfg.h, p => {
+        recProgress.style.width = (p * 100).toFixed(1) + '%';
+      });
+      recOverlay.hidden = true;
+
+      const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+      const name = `${currentFileName || 'circle'}-${selectedRatio.replace(':', 'x')}.${ext}`;
+      showReady(blob, name, selectedRatio, cfg.w, cfg.h);
+    } catch (err) {
+      console.error(err);
+      alert('Ошибка: ' + (err.message || err));
+    } finally {
+      exporting = false;
+      recOverlay.hidden = true;
+      shareBtn.disabled = false;
+    }
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (!shareModal.hidden) closeModal();
+      else if (!readyModal.hidden) closeReady();
+    }
+    if (e.code === 'Space' && shareModal.hidden && readyModal.hidden) {
+      e.preventDefault();
+      togglePlay();
+    }
+  });
+})();
+</script>
+</body>
+</html>
